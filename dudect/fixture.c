@@ -42,7 +42,7 @@
 
 #define ENOUGH_MEASURE 10000
 #define TEST_TRIES 10
-#define DUDECT_NUMBER_PERCENTILES 5  // 根据需求设定百分位的数量
+#define DUDECT_NUMBER_PERCENTILES 5
 
 static t_context_t *t;
 static t_context_t *t_cropped[DUDECT_NUMBER_PERCENTILES];
@@ -67,6 +67,36 @@ static void differentiate(int64_t *exec_times,
 {
     for (size_t i = 0; i < N_MEASURES; i++)
         exec_times[i] = after_ticks[i] - before_ticks[i];
+}
+
+// 新增 prepare_percentiles 函式來根據 exec_times 計算百分位門檻
+static int compare_int64(const void *a, const void *b)
+{
+    int64_t arg1 = *(const int64_t *) a;
+    int64_t arg2 = *(const int64_t *) b;
+    if (arg1 < arg2)
+        return -1;
+    else if (arg1 > arg2)
+        return 1;
+    return 0;
+}
+
+static void prepare_percentiles(int64_t *exec_times)
+{
+    size_t start = DROP_SIZE;
+    size_t valid_count = N_MEASURES - 2 * DROP_SIZE;
+    if (valid_count == 0)
+        return;
+    // 直接針對 exec_times 的有效部分排序
+    qsort(exec_times + start, valid_count, sizeof(int64_t), compare_int64);
+    for (size_t crop_index = 0; crop_index < DUDECT_NUMBER_PERCENTILES;
+         crop_index++) {
+        size_t pos = start + ((crop_index + 1) * valid_count) /
+                                 (DUDECT_NUMBER_PERCENTILES + 1);
+        if (pos >= N_MEASURES - DROP_SIZE)
+            pos = N_MEASURES - DROP_SIZE - 1;
+        percentiles[crop_index] = exec_times[pos];
+    }
 }
 
 static void update_statistics(const int64_t *exec_times, uint8_t *classes)
@@ -98,7 +128,7 @@ static void update_statistics(const int64_t *exec_times, uint8_t *classes)
     }
 }
 
-static bool report(void)
+static bool report(void)  // TODO: report 不需要改
 {
     double max_t = fabs(t_compute(t));
     double number_traces_max_t = t->n[0] + t->n[1];
@@ -154,6 +184,7 @@ static bool doit(int mode)
 
     bool ret = measure(before_ticks, after_ticks, input_data, mode);
     differentiate(exec_times, before_ticks, after_ticks);
+    prepare_percentiles(exec_times);
     update_statistics(exec_times, classes);
     ret &= report();
 
@@ -170,6 +201,16 @@ static void init_once(void)
 {
     init_dut();
     t_init(t);
+    for (size_t i = 0; i < DUDECT_NUMBER_PERCENTILES; i++) {
+        t_cropped[i] = malloc(sizeof(t_context_t));
+        if (!t_cropped[i])
+            die();
+        t_init(t_cropped[i]);
+    }
+    t_second_order = malloc(sizeof(t_context_t));
+    if (!t_second_order)
+        die();
+    t_init(t_second_order);
 }
 
 static bool test_const(char *text, int mode)
