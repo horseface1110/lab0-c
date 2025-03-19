@@ -42,8 +42,13 @@
 
 #define ENOUGH_MEASURE 10000
 #define TEST_TRIES 10
+#define DUDECT_NUMBER_PERCENTILES 5  // 根据需求设定百分位的数量
 
 static t_context_t *t;
+static t_context_t *t_cropped[DUDECT_NUMBER_PERCENTILES];
+static t_context_t *t_second_order;
+static int64_t percentiles[DUDECT_NUMBER_PERCENTILES] = {
+    0};  // 根據需求初始化百分位門檻數值
 
 /* threshold values for Welch's t-test */
 enum {
@@ -66,14 +71,30 @@ static void differentiate(int64_t *exec_times,
 
 static void update_statistics(const int64_t *exec_times, uint8_t *classes)
 {
-    for (size_t i = 0; i < N_MEASURES; i++) {
+    // 從第 10 筆開始，捨棄不穩定的初期數據
+    for (size_t i = 10; i < N_MEASURES; i++) {
         int64_t difference = exec_times[i];
-        /* CPU cycle counter overflowed or dropped measurement */
+
+        // 無效測量（例如 CPU 週期計數器溢出），跳過
         if (difference <= 0)
             continue;
 
-        /* do a t-test on the execution time */
+        // 更新原始統計上下文 t
         t_push(t, difference, classes[i]);
+
+        // 根據百分位門檻進行裁剪統計
+        for (size_t crop_index = 0; crop_index < DUDECT_NUMBER_PERCENTILES;
+             crop_index++) {
+            if (difference < percentiles[crop_index])
+                t_push(t_cropped[crop_index], difference, classes[i]);
+        }
+
+        // 第二階段檢測: 當測量數足夠多時，計算 centered product 的平方並更新
+        // t_second_order
+        if (t->n[0] > 10000) {
+            double centered = (double) difference - t->mean[classes[i]];
+            t_push(t_second_order, centered * centered, classes[i]);
+        }
     }
 }
 

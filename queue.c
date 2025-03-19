@@ -25,7 +25,7 @@ void q_free(struct list_head *head)
 
     element_t *entry = NULL, *safe = NULL;
     /* cppcheck-suppress unusedLabel */
-    list_for_each_entry_safe (entry, safe, head, list)
+    list_for_each_entry_safe(entry, safe, head, list)
         q_release_element(entry);
     free(head);
 }
@@ -103,7 +103,7 @@ int q_size(struct list_head *head)
 {
     element_t *entry;
     int count = 0;
-    list_for_each_entry (entry, head, list) {
+    list_for_each_entry(entry, head, list) {
         count++;
     }
     return count;
@@ -151,7 +151,7 @@ bool q_delete_dup(struct list_head *head)
     element_t *entry = NULL, *safe = NULL;
     bool dup = false;
     q_sort(head, false);
-    list_for_each_entry_safe (entry, safe, head, list) {
+    list_for_each_entry_safe(entry, safe, head, list) {
         if (entry->list.next != head &&
             strcmp(entry->value, safe->value) == 0) {
             list_del(entry->list.next->prev);
@@ -211,7 +211,6 @@ void q_reverseK(struct list_head *head, int k)
 
     if (!head || list_empty(head))
         return;
-    printf("reverseK\n");
     struct list_head *start = head, *end = NULL, *current = start;
     int index = 0, group = q_size(head) / k, current_group = 0;
     int i = 0;
@@ -219,7 +218,6 @@ void q_reverseK(struct list_head *head, int k)
         current = current->next;
         if (current_group < group) {
             index++;
-            printf("index: %d\n", index);
             if (index == 1) {
                 start = current;
             } else if (index == k) {
