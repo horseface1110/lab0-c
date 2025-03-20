@@ -69,26 +69,50 @@ static void differentiate(int64_t *exec_times,
         exec_times[i] = after_ticks[i] - before_ticks[i];
 }
 
-// 新增 prepare_percentiles 函式來根據 exec_times 計算百分位門檻
-static int compare_int64(const void *a, const void *b)
-{
-    int64_t arg1 = *(const int64_t *) a;
-    int64_t arg2 = *(const int64_t *) b;
-    if (arg1 < arg2)
-        return -1;
-    else if (arg1 > arg2)
-        return 1;
-    return 0;
-}
-
-static void prepare_percentiles(int64_t *exec_times)
+static void prepare_percentiles(int64_t *exec_times, uint8_t *classes)
 {
     size_t start = DROP_SIZE;
     size_t valid_count = N_MEASURES - 2 * DROP_SIZE;
     if (valid_count == 0)
         return;
-    // 直接針對 exec_times 的有效部分排序
-    qsort(exec_times + start, valid_count, sizeof(int64_t), compare_int64);
+
+    /* 定義用來保存 exec_times 與 classes 的對偶型別 */
+    typedef struct {
+        int64_t exec_time;
+        uint8_t cls;
+    } pair_t;
+
+    pair_t *pairs = malloc(valid_count * sizeof(pair_t));
+    if (!pairs)
+        die();
+
+    /* 從有效區間複製資料到 pairs 陣列 */
+    for (size_t i = 0; i < valid_count; i++) {
+        pairs[i].exec_time = exec_times[start + i];
+        pairs[i].cls = classes[start + i];
+    }
+
+    /* 注意：下面這個 compare_pair 為 GNU 擴充之本地函式 */
+    int compare_pair(const void *a, const void *b)
+    {
+        const pair_t *pa = (const pair_t *) a;
+        const pair_t *pb = (const pair_t *) b;
+        if (pa->exec_time < pb->exec_time)
+            return -1;
+        else if (pa->exec_time > pb->exec_time)
+            return 1;
+        else
+            return 0;
+    }
+    qsort(pairs, valid_count, sizeof(pair_t), compare_pair);
+
+    /* 更新原始陣列：將排序後的結果同步回 exec_times 與 classes */
+    for (size_t i = 0; i < valid_count; i++) {
+        exec_times[start + i] = pairs[i].exec_time;
+        classes[start + i] = pairs[i].cls;
+    }
+
+    /* 根據排序後的 exec_times 計算百分位數 */
     for (size_t crop_index = 0; crop_index < DUDECT_NUMBER_PERCENTILES;
          crop_index++) {
         size_t pos = start + ((crop_index + 1) * valid_count) /
@@ -97,6 +121,8 @@ static void prepare_percentiles(int64_t *exec_times)
             pos = N_MEASURES - DROP_SIZE - 1;
         percentiles[crop_index] = exec_times[pos];
     }
+
+    free(pairs);
 }
 
 static void update_statistics(const int64_t *exec_times, uint8_t *classes)
@@ -184,7 +210,7 @@ static bool doit(int mode)
 
     bool ret = measure(before_ticks, after_ticks, input_data, mode);
     differentiate(exec_times, before_ticks, after_ticks);
-    prepare_percentiles(exec_times);
+    prepare_percentiles(exec_times, classes);
     update_statistics(exec_times, classes);
     ret &= report();
 
